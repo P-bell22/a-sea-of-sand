@@ -6,3 +6,6 @@ Checks conservation across periodic boundaries, nonnegative heights, repose tole
 Rendering checks: `node --experimental-strip-types tests/rendering.mjs`. These exercise the actual renderer with an instrumented graphics context: unchanged views, five updates per second, full-rate camera turns, altitude/view transitions, resize, hidden tabs, grain view and cleanup. No terrain geometry, shading samples or default pixel density are reduced.
 
 CPU benchmark: `node --experimental-strip-types tests/performance.mjs`. Compare startup and 30 steady / 30 strong-variable model steps on the same machine, with no other benchmark running. Topology caching adds a 1 MiB fixed neighbour table and removes per-pair coordinate work from the avalanche loop.
+
+
+Fast forward: `node --experimental-strip-types tests/fast-forward.mjs` checks actual terrain evolution, conservation, nonnegative heights and repose under steady, strong and changing winds. `tests/playback.mjs` verifies nominal model-time accounting, detailed low-speed steps, bounded batches, pause/reset and the separate grain clock. Above 20 cy/s, larger transport steps are an explicit approximation; fast-forward cycle counts represent integrated model time, not individually executed detailed solves.

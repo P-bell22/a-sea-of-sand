@@ -10,6 +10,7 @@ export const FIELD_SIZE=GRID_SIZE*CELL_SIZE;
 export const REPOSE=Math.tan(32*Math.PI/180);
 const SHADOW_SLOPE=Math.tan(15*Math.PI/180);
 const clamp=(v:number,a:number,b:number)=>Math.max(a,Math.min(b,v));
+export const transportForcing=(strength:number)=>strength>.3?strength*(strength*strength-.09)/.91:0;
 export type FieldStats={volume:number;exported:number;initial:number;balanceError:number;maxHeight:number;bareFraction:number;cycles:number};
 export class SandField{
  readonly size:number;readonly cell:number;readonly height:Float64Array;
@@ -92,11 +93,13 @@ export class SandField{
   d[row+ix]+=leftAmount*(1-fz);d[row+right]+=rightAmount*(1-fz);
   d[nextRow+ix]+=leftAmount*fz;d[nextRow+right]+=rightAmount*fz;
  }
- step(strength:number,direction:number){
-  this.cycles++;
+ // Larger steps scale the transported sand and stable surface diffusion. They
+ // approximate several nominal cycles; they are not repeated detailed solves.
+ step(strength:number,direction:number,cycles=1){
+  this.cycles+=cycles;
   // A dimensionless transport law with a threshold and nonlinear response.
   // It is not a calibrated conversion from wind speed to sediment flux.
-  const transport=strength>.3?strength*(strength*strength-.09)/.91:0;
+  const transport=transportForcing(strength);
   if(transport<=0)return;
   const theta=direction*Math.PI/180,dx=Math.sin(theta),dz=Math.cos(theta),n=this.size;
   this.windShadow(dx,dz);this.delta.fill(0);
@@ -105,7 +108,7 @@ export class SandField{
    const i=z*n+x;if(h[i]<=0||sh[i]>h[i]+.08)continue;
    const up=this.sample(h,x-dx,z-dz),down=this.sample(h,x+dx,z+dz);
    const slope=(down-up)/(2*this.cell);
-   const erosion=Math.min(h[i],.12*transport*clamp(1+1.5*slope,.3,1.8));
+   const erosion=Math.min(h[i],.12*transport*cycles*clamp(1+1.5*slope,.3,1.8));
    this.delta[i]-=erosion;
    let remaining=erosion,tx=x,tz=z;
    for(let k=0;k<14;k++){
@@ -119,8 +122,9 @@ export class SandField{
   }
   for(let i=0;i<h.length;i++)h[i]+=this.delta[i];
   // Conservative slope-driven surface creep, followed by repose-limited slides.
-  this.creep(Math.min(.018,.006*transport));
-  this.relax(48);this.version++;
+  const base=Math.min(.018,.006*transport);
+  this.creep(cycles===1?base:(1-Math.pow(1-4*base,cycles))/4);
+  this.relax(cycles===1?48:192);this.version++;
  }
  private creep(k:number){
   const n=this.size,h=this.height;
