@@ -9,7 +9,13 @@ uniform float yaw;
 uniform float overhead;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
-float profile(float p){float f=fract(p);return f<.76?pow(f/.76,1.45):max(0.,(1.-f)/.24);}
+// A rounded, asymmetric dune section. Matching zero slopes at the crest
+// and trough avoids the knife edges made by the previous power/linear join.
+float profile(float p){
+ float f=fract(p);
+ float flank=f<.70?f/.70:(1.-f)/.30;
+ return flank*flank*(3.-2.*flank);
+}
 float terrain(vec2 world){
  vec2 p=vec2(world.x*.88+world.y*.475,-world.x*.475+world.y*.88);
  vec2 b=p-vec2(travel*2.,0.);
@@ -23,7 +29,7 @@ float terrain(vec2 world){
  height+=1.1*noise(p*.055);
  return 3.+height;
 }
-float shadow(vec3 p, vec3 light){float shade=1.;float t=7.;for(int i=0;i<9;i++){vec3 q=p+light*t;float d=q.y-terrain(q.xz);shade=min(shade,7.*d/t);t+=9.+float(i)*6.;}return clamp(shade,.15,1.);}
+float shadow(vec3 p, vec3 light){float shade=1.;float t=7.;for(int i=0;i<9;i++){vec3 q=p+light*t;float d=q.y-terrain(q.xz);shade=min(shade,3.5*d/t);t+=9.+float(i)*6.;}return clamp(shade,.28,1.);}
 void main(){
  vec2 uv=(gl_FragCoord.xy-.5*resolution)/resolution.y;
  float pitch=mix(.29,1.565,overhead);
@@ -36,7 +42,7 @@ void main(){
  vec3 col=sky;
  if(rd.y<0.){
   float t=max(0.,(ro.y-78.)/-rd.y);float hit=0.;vec3 p=ro;
-  for(int i=0;i<128;i++){p=ro+rd*t;float d=p.y-terrain(p.xz);if(d<max(.13,t*.00013)){hit=1.;break;}t+=max(.35,d*.48);if(t>9000.)break;}
+  for(int i=0;i<192;i++){p=ro+rd*t;float d=p.y-terrain(p.xz);if(d<max(.13,t*.00013)){hit=1.;break;}t+=max(.25,d*.4);if(t>9000.)break;}
   if(hit>.5){
    float e=max(.3,t*.0004);float h=terrain(p.xz);
    vec3 n=normalize(vec3(terrain(p.xz-vec2(e,0))-terrain(p.xz+vec2(e,0)),2.*e,terrain(p.xz-vec2(0,e))-terrain(p.xz+vec2(0,e))));
@@ -44,8 +50,8 @@ void main(){
    float diffuse=max(0.,dot(n,sun));float sh=shadow(p+n*.6,sun);
    float fine=sin((p.x*.88+p.z*.475)*2.5+noise(p.xz*.08)*5.-travel*28.);
    fine*=.018*exp(-t*.002);
-   vec3 warm=vec3(.91,.695,.435);vec3 cool=vec3(.29,.335,.335);
-   col=mix(cool,warm,clamp(diffuse*sh*1.22,0.,1.));
+   vec3 warm=vec3(.91,.695,.435);vec3 cool=vec3(.355,.38,.36);
+   col=mix(cool,warm,clamp(.12+diffuse*sh*1.06,0.,1.));
    col*=.9+.12*n.y+fine+.055*noise(p.xz*.12);
    float haze=1.-exp(-t*.00037);col=mix(col,vec3(.72,.755,.71),haze);
   }
@@ -76,7 +82,7 @@ export function createTerrain(canvas:HTMLCanvasElement,state:SimState,onError:(m
 export function drawGrain(canvas:HTMLCanvasElement,t:number){
  const rect=canvas.getBoundingClientRect();const ratio=Math.min(window.devicePixelRatio||1,2);if(canvas.width!==Math.round(rect.width*ratio)||canvas.height!==Math.round(rect.height*ratio)){canvas.width=Math.round(rect.width*ratio);canvas.height=Math.round(rect.height*ratio);}
  const ctx=canvas.getContext('2d');if(!ctx)return;ctx.setTransform(ratio,0,0,ratio,0,0);const w=rect.width,h=rect.height;ctx.clearRect(0,0,w,h);
- const start=w*.08,end=w*.86,crest=w*.66,baseline=h*.77,height=Math.min(h*.25,w*.19);const shape=(x:number,shift=0)=>{const v=x-shift;if(v<start||v>end)return baseline;return v<crest?baseline-height*Math.pow((v-start)/(crest-start),1.45):baseline-height*(end-v)/(end-crest);};
+ const start=w*.08,end=w*.86,crest=w*.66,baseline=h*.77,height=Math.min(h*.25,w*.19);const shape=(x:number,shift=0)=>{const v=x-shift;if(v<start||v>end)return baseline;const f=v<crest?(v-start)/(crest-start):(end-v)/(end-crest);return baseline-height*f*f*(3-2*f);};
  ctx.strokeStyle='#a4b19966';ctx.lineWidth=1;ctx.setLineDash([5,6]);ctx.beginPath();for(let x=start-35;x<=end;x+=2){const y=shape(x,-35);if(x===start-35)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.stroke();ctx.setLineDash([]);
  const grad=ctx.createLinearGradient(0,baseline-height,0,baseline);grad.addColorStop(0,'#d2ac68');grad.addColorStop(1,'#6e6944');ctx.fillStyle=grad;ctx.beginPath();ctx.moveTo(start,baseline);for(let x=start;x<=end;x+=2)ctx.lineTo(x,shape(x));ctx.lineTo(end,baseline);ctx.closePath();ctx.fill();
  ctx.strokeStyle='#f0d39a';ctx.lineWidth=1.4;ctx.beginPath();for(let x=start;x<=end;x+=2){if(x===start)ctx.moveTo(x,shape(x));else ctx.lineTo(x,shape(x));}ctx.stroke();
