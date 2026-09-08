@@ -1,7 +1,7 @@
 /** Reduced bulk-sediment model inspired by Werner (1995).
  * The grid stores sand thickness in metres above non-erodible, level ground.
  * Every erosion, deposition, creep and avalanche transfer is explicitly balanced.
- * Open boundaries export sediment; no wrapping or repeated landscape is used.
+ * Periodic boundaries represent a continuous desert: outgoing sand re-enters opposite edges.
  * Transport cycles are model units, not calibrated calendar years.
  */
 export const GRID_SIZE=256;
@@ -23,14 +23,22 @@ export class SandField{
  }
  private seedDunes(){
   // Irregular, finite initial sand bodies. Their shapes are starting conditions,
-  // never translated/repeated by the renderer or prescribed during evolution.
-  const seeds=[[-490,-430,25,1.0],[-180,-460,38,1.12],[175,-390,46,.95],[485,-290,22,1.15],[-535,-100,35,1.12],[-220,-100,20,.95],[75,-40,32,1.2],[425,10,39,.95],[-490,250,23,1.05],[-180,240,43,1.18],[145,290,24,.9],[470,390,32,1.12],[-440,555,33,1.05],[-55,555,27,1.15],[280,600,20,.9]];
+  // never translated as rigid shapes or prescribed during evolution.
+  let randomState=3719;
+  const random=()=>{randomState=(Math.imul(randomState,1664525)+1013904223)>>>0;return randomState/4294967296;};
+  const seeds:number[][]=[];
+  for(let z=0;z<7;z++)for(let x=0;x<7;x++)seeds.push([
+   (x+.5+(random()-.5)*.85)*FIELD_SIZE/7-FIELD_SIZE/2,
+   (z+.5+(random()-.5)*.85)*FIELD_SIZE/7-FIELD_SIZE/2,
+   23+random()*26,.82+random()*.45
+  ]);
   const domain=this.size*this.cell,scale=domain/FIELD_SIZE;
   for(let j=0;j<seeds.length;j++){
    const [cx0,cz0,H0,wide]=seeds[j];const cx=cx0*scale,cz=cz0*scale,H=H0*scale;
    const angle=(60+(j%5-2)*5)*Math.PI/180,dx=Math.sin(angle),dz=Math.cos(angle),W=H*3.7*wide;
    for(let z=0;z<this.size;z++)for(let x=0;x<this.size;x++){
-    const px=(x+.5)*this.cell-domain/2-cx,pz=(z+.5)*this.cell-domain/2-cz;
+    let px=(x+.5)*this.cell-domain/2-cx,pz=(z+.5)*this.cell-domain/2-cz;
+    px-=Math.round(px/domain)*domain;pz-=Math.round(pz/domain)*domain;
     const along=px*dx+pz*dz,cross=px*dz-pz*dx,a=cross/W;
     if(Math.abs(a)>=1)continue;
     const crown=H*Math.pow(1-a*a,.75),crest=W*.8*a*a;
@@ -48,28 +56,29 @@ export class SandField{
  stats():FieldStats{let maxHeight=0,bare=0;for(const h of this.height){maxHeight=Math.max(maxHeight,h);if(h<.1)bare++;}const volume=this.volume();return {volume,exported:this.exported,initial:this.initialVolume,balanceError:volume+this.exported-this.initialVolume,maxHeight,bareFraction:bare/this.height.length,cycles:this.cycles};}
  reset(){this.height.set(this.initialHeight);this.exported=0;this.cycles=0;this.version++;}
  private sample(a:Float64Array,x:number,z:number){
-  if(x<0||z<0||x>this.size-1||z>this.size-1)return 0;
+  x=((x%this.size)+this.size)%this.size;z=((z%this.size)+this.size)%this.size;
   const ix=Math.floor(x),iz=Math.floor(z),fx=x-ix,fz=z-iz,n=this.size;
-  const x1=Math.min(ix+1,n-1),z1=Math.min(iz+1,n-1);
+  const x1=(ix+1)%n,z1=(iz+1)%n;
   return (a[iz*n+ix]*(1-fx)+a[iz*n+x1]*fx)*(1-fz)+(a[z1*n+ix]*(1-fx)+a[z1*n+x1]*fx)*fz;
  }
  private windShadow(dx:number,dz:number){
   const n=this.size,h=this.height,s=this.shelter;
-  // Upwind envelope. Crosswind interpolation avoids locking shadows to 8 winds.
+  // Two sweeps carry the upwind envelope across the periodic boundary.
+  s.set(h);
+  // Crosswind interpolation avoids locking shadows to 8 winds.
   if(Math.abs(dx)>=Math.abs(dz)){
    const sign=dx>=0?1:-1,offset=dz/Math.abs(dx),drop=this.cell/Math.abs(dx)*SHADOW_SLOPE;
-   for(let k=0;k<n;k++){const x=sign>0?k:n-1-k;for(let z=0;z<n;z++){const i=z*n+x;s[i]=Math.max(h[i],this.sample(s,x-sign,z-offset)-drop);}}
+   for(let k=0;k<2*n;k++){const x=sign>0?k%n:n-1-k%n;for(let z=0;z<n;z++){const i=z*n+x;s[i]=Math.max(h[i],this.sample(s,x-sign,z-offset)-drop);}}
   }else{
    const sign=dz>=0?1:-1,offset=dx/Math.abs(dz),drop=this.cell/Math.abs(dz)*SHADOW_SLOPE;
-   for(let k=0;k<n;k++){const z=sign>0?k:n-1-k;for(let x=0;x<n;x++){const i=z*n+x;s[i]=Math.max(h[i],this.sample(s,x-offset,z-sign)-drop);}}
+   for(let k=0;k<2*n;k++){const z=sign>0?k%n:n-1-k%n;for(let x=0;x<n;x++){const i=z*n+x;s[i]=Math.max(h[i],this.sample(s,x-offset,z-sign)-drop);}}
   }
  }
  private deposit(x:number,z:number,amount:number){
   const ix=Math.floor(x),iz=Math.floor(z),fx=x-ix,fz=z-iz,n=this.size;
   for(let oz=0;oz<=1;oz++)for(let ox=0;ox<=1;ox++){
-   const part=amount*(ox?fx:1-fx)*(oz?fz:1-fz),xx=ix+ox,zz=iz+oz;
-   if(xx<0||zz<0||xx>=n||zz>=n)this.exported+=part*this.cell*this.cell;
-   else this.delta[zz*n+xx]+=part;
+   const part=amount*(ox?fx:1-fx)*(oz?fz:1-fz),xx=((ix+ox)%n+n)%n,zz=((iz+oz)%n+n)%n;
+   this.delta[zz*n+xx]+=part;
   }
  }
  step(strength:number,direction:number){
@@ -90,7 +99,7 @@ export class SandField{
    let remaining=erosion,tx=x,tz=z;
    for(let k=0;k<14;k++){
     tx+=dx*hop;tz+=dz*hop;
-    if(tx<0||tz<0||tx>n-1||tz>n-1){this.exported+=remaining*this.cell*this.cell;remaining=0;break;}
+    tx=(tx+n)%n;tz=(tz+n)%n;
     const surface=this.sample(h,tx,tz),shadow=this.sample(sh,tx,tz);
     const probability=shadow>surface+.08?.97:surface>.08?.55:.08;
     const landed=k===13?remaining:remaining*probability;
@@ -100,15 +109,16 @@ export class SandField{
   for(let i=0;i<h.length;i++)h[i]+=this.delta[i];
   // Conservative slope-driven surface creep, followed by repose-limited slides.
   this.creep(Math.min(.018,.006*transport));
-  this.relax(18);this.version++;
+  this.relax(48);this.version++;
  }
  private creep(k:number){
   const n=this.size,h=this.height;
   this.delta.fill(0);
   for(let z=0;z<n;z++)for(let x=0;x<n;x++){
    const i=z*n+x;
-   if(x+1<n){const q=(h[i]-h[i+1])*k;this.delta[i]-=q;this.delta[i+1]+=q;}
-   if(z+1<n){const q=(h[i]-h[i+n])*k;this.delta[i]-=q;this.delta[i+n]+=q;}
+   const right=z*n+(x+1)%n,below=((z+1)%n)*n+x;
+   const qx=(h[i]-h[right])*k,qz=(h[i]-h[below])*k;
+   this.delta[i]-=qx+qz;this.delta[right]+=qx;this.delta[below]+=qz;
   }
   for(let i=0;i<h.length;i++)h[i]+=this.delta[i];
  }
@@ -119,7 +129,7 @@ export class SandField{
    let worst=0;
    for(let zz=0;zz<n;zz++)for(let xx=0;xx<n;xx++){
     const x=pass%2?n-1-xx:xx,z=pass%2?n-1-zz:zz,i=z*n+x;
-    for(const [ox,oz,max] of neighbors){const nx=x+ox,nz=z+oz;if(nx<0||nz<0||nx>=n||nz>=n)continue;const j=nz*n+nx,d=h[i]-h[j],excess=Math.abs(d)-max;if(excess<=.002)continue;
+    for(const [ox,oz,max] of neighbors){const nx=(x+ox+n)%n,nz=(z+oz+n)%n;const j=nz*n+nx,d=h[i]-h[j],excess=Math.abs(d)-max;if(excess<=.002)continue;
      worst=Math.max(worst,excess);const source=d>0?i:j,dest=d>0?j:i,move=Math.min(h[source],excess*.5);h[source]-=move;h[dest]+=move;
     }
    }

@@ -7,8 +7,8 @@ function invariants(field,label){
  assert.ok(field.height.every(h=>Number.isFinite(h)&&h>=-1e-10),`${label}: nonnegative finite sand`);
  let excess=0;
  for(let z=0;z<field.size;z++)for(let x=0;x<field.size;x++)for(const [dx,dz] of [[1,0],[0,1],[1,1],[-1,1]]){
-  if(x+dx<0||x+dx>=field.size||z+dz>=field.size)continue;
-  excess=Math.max(excess,Math.abs(field.height[z*field.size+x]-field.height[(z+dz)*field.size+x+dx])-field.cell*Math.hypot(dx,dz)*REPOSE);
+  const nx=(x+dx+field.size)%field.size,nz=(z+dz)%field.size;
+  excess=Math.max(excess,Math.abs(field.height[z*field.size+x]-field.height[nz*field.size+nx])-field.cell*Math.hypot(dx,dz)*REPOSE);
  }
  assert.ok(excess<.02,`${label}: repose excess ${excess} m`);
  return {relativeMassError:s.balanceError/s.initial,maxSlopeExcessM:excess,exportedM3:s.exported};
@@ -40,5 +40,5 @@ for(const H of [6,15]){const m=mound(H),before=centroid(m);for(let i=0;i<25;i++)
 assert.ok(travel[0]>travel[1],'smaller isolated mound should migrate faster');
 console.log('Small / large mound centroid displacement:',travel);
 const empty=new SandField(32,6,false);empty.step(2,90);assert.equal(empty.volume(),0);assert.equal(empty.exported,0);
-const edge=new SandField(32,6,false);edge.height[16*32+31]=2;edge.initialVolume=edge.volume();edge.step(2,90);assert.ok(edge.exported>0);invariants(edge,'open boundary');
-console.log('PASS: conservation, finite nonnegative sand, repose, calm threshold, reset, wind direction, relative migration and open boundary export.');
+const edge=new SandField(32,6,false);edge.height[16*32+31]=2;edge.initialVolume=edge.volume();edge.step(2,90);assert.equal(edge.exported,0);assert.ok(edge.height[16*32]>0);invariants(edge,'periodic boundary');
+console.log('PASS: conservation, finite nonnegative sand, repose, calm threshold, reset, wind direction, relative migration and periodic boundary transport.');

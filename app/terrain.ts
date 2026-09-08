@@ -11,8 +11,7 @@ uniform float altitude;
 uniform float yaw;
 uniform float overhead;
 float heightAt(vec2 p){
- vec2 uv=p/fieldSize+.5;
- if(uv.x<0.||uv.y<0.||uv.x>1.||uv.y>1.)return 0.;
+ vec2 uv=fract(p/fieldSize+.5);
  return dot(texture2D(sandMap,uv).rg,vec2(255.,255./256.));
 }
 float shadow(vec3 p,vec3 sun){
@@ -28,7 +27,7 @@ void main(){
  float pitch=mix(.29,1.565,overhead),cy=cos(yaw),sy=sin(yaw);
  vec3 forward=vec3(sy*cos(pitch),-sin(pitch),cy*cos(pitch));
  vec3 right=vec3(cy,0.,-sy),up=cross(forward,right);
- vec3 ro=vec3(0.,altitude,mix(-820.,0.,overhead));
+ vec3 ro=vec3(0.,altitude,mix(-280.,0.,overhead));
  vec3 rd=normalize(forward*mix(1.17,.68,overhead)+uv.x*right+uv.y*up);
  vec3 sky=mix(vec3(.80,.84,.78),vec3(.28,.56,.72),clamp(rd.y*2.6,0.,1.));
  vec3 col=sky;
@@ -50,8 +49,7 @@ void main(){
     t=next;if(t>12000.)break;
    }
   }
-  // Beyond the finite dune patch the bed remains a flat plain. An analytic
-  // intersection keeps distant ground continuous all the way to the horizon.
+  // At the far clipping distance, merge unresolved dunes into atmospheric haze.
   if(hit<.5){t=ro.y/-rd.y;p=ro+rd*t;hit=1.;}
   if(hit>.5){
    float e=max(5.,t*.0007),h=heightAt(p.xz);
@@ -74,7 +72,7 @@ export function createTerrain(canvas:HTMLCanvasElement,state:SimState,onError:(m
  try{vs=compile(gl.VERTEX_SHADER,vertexShader);fs=compile(gl.FRAGMENT_SHADER,fragmentShader);program=gl.createProgram()!;gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error('Terrain shader link failed');}catch(e){onError('The 3D view could not start. Grain journey is still available.');console.error(e);return()=>{};}
  gl.useProgram(program);const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);const pos=gl.getAttribLocation(program,'position');gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
  const uniforms=Object.fromEntries(['resolution','sandMap','fieldSize','maxHeight','altitude','yaw','overhead'].map(k=>[k,gl.getUniformLocation(program,k)]));
- const texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+ const texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
  gl.uniform1i(uniforms.sandMap,0);gl.uniform1f(uniforms.fieldSize,FIELD_SIZE);
  const packed=new Uint8Array(GRID_SIZE*GRID_SIZE*4);let packedVersion=-1;
  let frame=0,previous=0,top=0,alt=state.altitude,quality=.9,frameTime=16,frames=0;
