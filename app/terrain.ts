@@ -1,9 +1,9 @@
-export type SimState = {years:number; travel:number; grainTime:number; playing:boolean; speed:number; strength:number; altitude:number; view:string; yaw:number};
+import type { SimState } from './wind';
 export const vertexShader = `attribute vec2 position; void main(){gl_Position=vec4(position,0.,1.);}`;
 export const fragmentShader = `
 precision highp float;
 uniform vec2 resolution;
-uniform float travel;
+uniform vec2 drift;
 uniform float altitude;
 uniform float yaw;
 uniform float overhead;
@@ -18,11 +18,12 @@ float profile(float p){
 }
 float terrain(vec2 world){
  vec2 p=vec2(world.x*.88+world.y*.475,-world.x*.475+world.y*.88);
- vec2 b=p-vec2(travel*2.,0.);
+ vec2 driftAlong=vec2(drift.x*.88+drift.y*.475,-drift.x*.475+drift.y*.88);
+ vec2 b=p-driftAlong*2.;
  float warp=sin(b.y*.008)*.28+sin(b.y*.021+b.x*.001)*.14+(noise(b*.003)-.5)*.55;
  float large=profile(b.x/300.+warp);
  float height=56.*large*(.78+.28*noise(b*.004+12.));
- vec2 s=p-vec2(travel*8.,0.);
+ vec2 s=p-driftAlong*8.;
  float bend=.26*sin(s.y*.027)+.2*sin(s.y*.011+s.x*.008)+.13*noise(s*.012);
  float small=profile(s.x/76.+bend);
  height+=12.*small*(.6+.4*(1.-large));
@@ -48,7 +49,8 @@ void main(){
    vec3 n=normalize(vec3(terrain(p.xz-vec2(e,0))-terrain(p.xz+vec2(e,0)),2.*e,terrain(p.xz-vec2(0,e))-terrain(p.xz+vec2(0,e))));
    vec3 sun=normalize(vec3(-.65,.6,-.48));
    float diffuse=max(0.,dot(n,sun));float sh=shadow(p+n*.6,sun);
-   float fine=sin((p.x*.88+p.z*.475)*2.5+noise(p.xz*.08)*5.-travel*28.);
+   vec2 ripplePoint=p.xz-drift*14.;
+   float fine=sin((ripplePoint.x*.88+ripplePoint.y*.475)*2.5+noise(ripplePoint*.08)*5.);
    fine*=.018*exp(-t*.002);
    vec3 warm=vec3(.91,.695,.435);vec3 cool=vec3(.355,.38,.36);
    col=mix(cool,warm,clamp(.12+diffuse*sh*1.06,0.,1.));
@@ -66,7 +68,7 @@ export function createTerrain(canvas:HTMLCanvasElement,state:SimState,onError:(m
  let program:WebGLProgram;let vs:WebGLShader;let fs:WebGLShader;
  try{vs=compile(gl.VERTEX_SHADER,vertexShader);fs=compile(gl.FRAGMENT_SHADER,fragmentShader);program=gl.createProgram()!;gl.attachShader(program,vs);gl.attachShader(program,fs);gl.linkProgram(program);if(!gl.getProgramParameter(program,gl.LINK_STATUS))throw new Error('Cannot link terrain shader');}catch(e){onError('The 3D view is unavailable in this browser. The Grain journey view still works.');console.error(e);return()=>{};}
  gl.useProgram(program);const buffer=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1,1,-1,-1,1,-1,1,1,-1,1,1]),gl.STATIC_DRAW);const pos=gl.getAttribLocation(program,'position');gl.enableVertexAttribArray(pos);gl.vertexAttribPointer(pos,2,gl.FLOAT,false,0,0);
- const uniforms=Object.fromEntries(['resolution','travel','altitude','yaw','overhead'].map(k=>[k,gl.getUniformLocation(program,k)]));
+ const uniforms=Object.fromEntries(['resolution','drift','altitude','yaw','overhead'].map(k=>[k,gl.getUniformLocation(program,k)]));
  let frame=0,previous=0;let top=0;let alt=state.altitude;let quality=.85;let renderMs=16;let count=0;
  const resize=()=>{const r=canvas.getBoundingClientRect();const ratio=Math.min(window.devicePixelRatio||1,1.4)*quality;canvas.width=Math.max(1,Math.floor(r.width*ratio));canvas.height=Math.max(1,Math.floor(r.height*ratio));gl.viewport(0,0,canvas.width,canvas.height);};
  const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
@@ -74,7 +76,7 @@ export function createTerrain(canvas:HTMLCanvasElement,state:SimState,onError:(m
  function draw(now:number){frame=requestAnimationFrame(draw);if(document.hidden||state.view==='grain'){previous=now;return;}const dt=Math.min((now-previous)/1000,.05);if(previous){renderMs=renderMs*.96+(now-previous)*.04;}previous=now;
   if(++count===180&&renderMs>36&&quality>.55){quality=.6;resize();}
   top+=(Number(state.view==='above')-top)*Math.min(1,dt*4);alt+=(state.altitude-alt)*Math.min(1,dt*4);
-  gl!.uniform2f(uniforms.resolution,canvas.width,canvas.height);gl!.uniform1f(uniforms.travel,state.travel);gl!.uniform1f(uniforms.altitude,alt);gl!.uniform1f(uniforms.yaw,state.yaw);gl!.uniform1f(uniforms.overhead,top);gl!.drawArrays(gl!.TRIANGLES,0,6);
+  gl!.uniform2f(uniforms.resolution,canvas.width,canvas.height);gl!.uniform2f(uniforms.drift,state.driftX,state.driftY);gl!.uniform1f(uniforms.altitude,alt);gl!.uniform1f(uniforms.yaw,state.yaw);gl!.uniform1f(uniforms.overhead,top);gl!.drawArrays(gl!.TRIANGLES,0,6);
  }
  frame=requestAnimationFrame(draw);
  return()=>{cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',lost);gl.deleteBuffer(buffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);};

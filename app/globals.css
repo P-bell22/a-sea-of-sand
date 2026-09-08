@@ -11,3 +11,10 @@
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important}}
 .download-link{text-decoration:none}.grain-mode .time-value{font-size:clamp(24px,3vw,44px)}
 @media(max-width:600px){.download-link span{display:none}.grain-mode .scene-hint{display:none}.grain-mode .time-value{font-size:32px}}
+/* Wind direction and a time-varying regime. Compass bearings are map-fixed. */
+.compass-north{position:absolute;top:-13px;left:50%;transform:translateX(-50%);font-size:9px;color:#cdd5bf}.compass:before{display:none}.compass svg{transition:none}
+.wind-auto{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;font-size:13px}.wind-auto label{cursor:pointer}.wind-auto [data-slot=switch]{height:20px;width:34px;background:#68735d}.wind-auto [data-slot=switch][data-checked]{background:#dfbd76}.wind-mode-note{font-size:11px;line-height:1.5;color:#bcc7b0;margin:9px 0 0}.scene{min-height:710px}.wind-panel{padding:18px 22px}.wind-reading{margin:18px 0 16px}.wind-panel .control{margin-top:15px}.wind-panel .panel-rule{margin:16px 0}.wind-panel .wind-note{margin-top:12px}
+@media(max-width:900px){.wind-panel{padding:17px}.scene{min-height:710px}}
+@media(max-width:600px){.scene{min-height:810px}.wind-panel{padding:15px}.wind-auto{font-size:12px;gap:7px}.wind-mode-note{font-size:10px}.wind-auto [data-slot=switch]{width:30px}.grain-mode .scene{min-height:640px}}
+.wind-panel .compass{width:36px;height:36px}.wind-panel .wind-reading{margin:15px 0 12px}.wind-panel .control{margin-top:12px}.wind-panel .control-title{margin-bottom:6px}.wind-panel .control [data-slot=slider]{padding:4px 0}.wind-panel .panel-rule{margin:12px 0}.wind-panel .migration{margin-top:9px}.wind-mode-note{line-height:1.4;margin-top:7px}.scene{min-height:760px}
+@media(max-width:600px){.scene{min-height:850px}.grain-mode .scene{min-height:640px}}
