@@ -27,7 +27,7 @@ float terrain(vec2 world){
  float bend=.26*sin(s.y*.027)+.2*sin(s.y*.011+s.x*.008)+.13*noise(s*.012);
  float small=profile(s.x/76.+bend);
  height+=12.*small*(.6+.4*(1.-large));
- height+=1.1*noise(p*.055);
+ height+=.3*noise(p*.018);
  return 3.+height;
 }
 float shadow(vec3 p, vec3 light){float shade=1.;float t=7.;for(int i=0;i<9;i++){vec3 q=p+light*t;float d=q.y-terrain(q.xz);shade=min(shade,3.5*d/t);t+=9.+float(i)*6.;}return clamp(shade,.28,1.);}
@@ -43,22 +43,34 @@ void main(){
  vec3 col=sky;
  if(rd.y<0.){
   float t=max(0.,(ro.y-78.)/-rd.y);float hit=0.;vec3 p=ro;
-  for(int i=0;i<192;i++){p=ro+rd*t;float d=p.y-terrain(p.xz);if(d<max(.13,t*.00013)){hit=1.;break;}t+=max(.25,d*.4);if(t>9000.)break;}
+  for(int i=0;i<192;i++){p=ro+rd*t;float d=p.y-terrain(p.xz);if(d<max(.12,t*.45/resolution.y)){hit=1.;break;}t+=max(.25,d*.4);if(t>9000.)break;}
+  // Grazing rays can spend their entire distance-march budget beside a crest.
+  // Continue with bounded samples and refine the crossing, rather than drawing
+  // sky through the terrain as a bright outline.
+  if(hit<.5&&t<9000.){
+   for(int i=0;i<128;i++){
+    float next=t+max(2.,t*.002);vec3 q=ro+rd*next;
+    if(q.y-terrain(q.xz)<max(.12,next*.45/resolution.y)){
+     float lo=t,hi=next;
+     for(int j=0;j<7;j++){float mid=(lo+hi)*.5;vec3 m=ro+rd*mid;if(m.y>terrain(m.xz))lo=mid;else hi=mid;}
+     t=hi;p=ro+rd*t;hit=1.;break;
+    }
+    t=next;if(t>9000.)break;
+   }
+  }
   if(hit>.5){
    float e=max(.3,t*.0004);float h=terrain(p.xz);
    vec3 n=normalize(vec3(terrain(p.xz-vec2(e,0))-terrain(p.xz+vec2(e,0)),2.*e,terrain(p.xz-vec2(0,e))-terrain(p.xz+vec2(0,e))));
    vec3 sun=normalize(vec3(-.65,.6,-.48));
    float diffuse=max(0.,dot(n,sun));float sh=shadow(p+n*.6,sun);
-   vec2 ripplePoint=p.xz-drift*14.;
-   float fine=sin((ripplePoint.x*.88+ripplePoint.y*.475)*2.5+noise(ripplePoint*.08)*5.);
-   fine*=.018*exp(-t*.002);
    vec3 warm=vec3(.91,.695,.435);vec3 cool=vec3(.355,.38,.36);
    col=mix(cool,warm,clamp(.12+diffuse*sh*1.06,0.,1.));
-   col*=.9+.12*n.y+fine+.055*noise(p.xz*.12);
+   // Only broad, low-contrast sand colour variation is resolved from altitude.
+   col*=.94+.08*n.y+.015*noise(p.xz*.012);
    float haze=1.-exp(-t*.00037);col=mix(col,vec3(.72,.755,.71),haze);
   }
  }
- col=pow(col,vec3(.94));float grain=hash(gl_FragCoord.xy)*.007;col+=grain;
+ col=pow(col,vec3(.94));float grain=hash(gl_FragCoord.xy)*.002;col+=grain;
  gl_FragColor=vec4(col,1.);
 }`;
 export function createTerrain(canvas:HTMLCanvasElement,state:SimState,onError:(message:string)=>void){
