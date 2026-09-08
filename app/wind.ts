@@ -1,4 +1,5 @@
 import { SandField } from './sediment';
+export const MAX_SIMULATION_SPEED=1000;
 export type SimState={
  cycles:number;pending:number;grainTime:number;playing:boolean;speed:number;strength:number;
  altitude:number;view:string;yaw:number;direction:number;variableWind:boolean;windPhase:number;
@@ -10,8 +11,10 @@ export function advanceSimulation(s:SimState,dt:number){
  if(!s.playing||dt<=0)return;
  if(s.view==='grain'){const w=windAt(s);s.grainTime+=dt*s.speed/5*(w.strength>.3?w.strength:0);return;}
  s.model??=new SandField();
- s.pending=Math.min(3,s.pending+dt*s.speed);
- // Bound per-frame work; the displayed clock counts only completed solver steps.
- if(s.pending>=1){const w=windAt(s);s.model.step(w.strength,w.direction);s.pending-=1;s.cycles++;if(s.variableWind)s.windPhase+=2*Math.PI/240;}
+ s.pending=Math.min(Math.max(3,s.speed*.1),s.pending+dt*s.speed);
+ // Batch inexpensive steps for high targets, yielding between batches so
+ // controls remain responsive. A costly individual step is never truncated.
+ const deadline=performance.now()+8;
+ while(s.pending>=1){const w=windAt(s);s.model.step(w.strength,w.direction);s.pending-=1;s.cycles++;if(s.variableWind)s.windPhase+=2*Math.PI/240;if(performance.now()>=deadline)break;}
 }
 export function resetSimulation(s:SimState){s.cycles=0;s.pending=0;s.grainTime=0;s.yaw=0;s.windPhase=0;s.model?.reset();}

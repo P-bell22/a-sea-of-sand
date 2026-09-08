@@ -1,0 +1,18 @@
+import fs from 'node:fs';
+import assert from 'node:assert/strict';
+import ts from 'typescript';
+const source=fs.readFileSync(new URL('../app/wind.ts',import.meta.url),'utf8');
+const js=ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText.replace("'./sediment'",JSON.stringify(new URL('../app/sediment.ts',import.meta.url).href));
+const {makeState,advanceSimulation,MAX_SIMULATION_SPEED,resetSimulation}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+assert.equal(MAX_SIMULATION_SPEED,1000);
+let now=0,steps=0,cost=0;const nativePerformance=globalThis.performance;
+globalThis.performance={now:()=>now};
+const s=makeState();s.speed=1000;s.model={step(){steps++;now+=cost;},reset(){steps=0;}};
+advanceSimulation(s,.02);assert.equal(s.cycles,20);assert.equal(steps,20,'fast steps are batched beyond one per frame');
+resetSimulation(s);cost=3;advanceSimulation(s,.02);assert.equal(s.cycles,3);assert.equal(steps,3,'batch yields after the time budget');
+resetSimulation(s);cost=50;advanceSimulation(s,.02);assert.equal(s.cycles,1);assert.equal(steps,1,'a slow step finishes, but no second step starts');
+s.playing=false;advanceSimulation(s,.02);assert.equal(s.cycles,1);
+resetSimulation(s);assert.equal(s.cycles,0);assert.equal(s.pending,0);
+s.playing=true;s.view='grain';advanceSimulation(s,.02);assert.equal(s.cycles,0);assert.equal(s.grainTime,4,'grain clock keeps the speed multiplier');
+globalThis.performance=nativePerformance;
+console.log('PASS: 1000 cy/s target, batched completed steps, bounded work, pause, reset and grain clock.');
