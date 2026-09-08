@@ -2,6 +2,8 @@
 
 An interactive aerial dune simulation with wind controls, a continuous desert view, and a separate diagram showing how grains move over a dune.
 
+[Open the public simulation](https://p-bell22.github.io/a-sea-of-sand/)
+
 ## Run the simulation
 
 Download [a-sea-of-sand.html](./a-sea-of-sand.html) and open it in a browser with hardware acceleration enabled. The file contains its JavaScript and styles and works offline; it does not require a server or an account.
@@ -26,7 +28,7 @@ npm ci
 npm run build:html
 ```
 
-This regenerates the root `a-sea-of-sand.html` and the copy in `public/`. The standalone build uses `standalone.tsx` and `standalone.config.ts`. The separate `npm run dev` and `npm run build` commands retain the original Sites/Vinext development and hosting setup.
+This regenerates `index.html` for GitHub Pages, the root `a-sea-of-sand.html` download, and the copy in `public/`. GitHub Pages serves the `main` branch root; rebuilding and pushing updates the public simulation. The standalone build uses `standalone.tsx` and `standalone.config.ts`. The separate `npm run dev` and `npm run build` commands retain the original Sites/Vinext development and hosting setup.
 
 ## Source and checks
 
