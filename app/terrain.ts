@@ -75,24 +75,31 @@ export function createTerrain(canvas:HTMLCanvasElement,state:SimState,onError:(m
  const texture=gl.createTexture();gl.activeTexture(gl.TEXTURE0);gl.bindTexture(gl.TEXTURE_2D,texture);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.REPEAT);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.REPEAT);
  gl.uniform1i(uniforms.sandMap,0);gl.uniform1f(uniforms.fieldSize,FIELD_SIZE);
  const packed=new Uint8Array(GRID_SIZE*GRID_SIZE*4);let packedVersion=-1;
- let frame=0,previous=0,top=0,alt=state.altitude,quality=.9,frameTime=16,frames=0;
- const resize=()=>{const r=canvas.getBoundingClientRect(),ratio=Math.min(window.devicePixelRatio||1,1.3)*quality;canvas.width=Math.max(1,Math.floor(r.width*ratio));canvas.height=Math.max(1,Math.floor(r.height*ratio));gl.viewport(0,0,canvas.width,canvas.height);};
- const observer=new ResizeObserver(resize);observer.observe(canvas);resize();
+ let frame=0,previous=0,top=0,alt=state.altitude,drawnYaw=NaN,invalidated=true;
+ // Keep the original full-detail resolution. An unchanged landscape needs no
+ // new GPU work; camera movement still renders on every animation frame.
+ const resize=()=>{const r=canvas.getBoundingClientRect(),ratio=Math.min(window.devicePixelRatio||1,1.3)*.9,w=Math.max(1,Math.floor(r.width*ratio)),h=Math.max(1,Math.floor(r.height*ratio));if(canvas.width!==w||canvas.height!==h){canvas.width=w;canvas.height=h;gl.viewport(0,0,w,h);invalidated=true;}};
+ const observer=new ResizeObserver(resize);observer.observe(canvas);window.addEventListener('resize',resize);resize();
  const lost=(e:Event)=>{e.preventDefault();cancelAnimationFrame(frame);onError('The graphics connection was lost. Reload to restore the 3D view.');};canvas.addEventListener('webglcontextlost',lost);
  function draw(now:number){
   frame=requestAnimationFrame(draw);if(document.hidden||state.view==='grain'){previous=now;return;}
-  const dt=Math.min((now-previous)/1000,.05);if(previous)frameTime=frameTime*.96+(now-previous)*.04;previous=now;
-  if(++frames===180&&frameTime>38){quality=.65;resize();}
+  const dt=Math.min((now-previous)/1000,.05);previous=now;
   const model=state.model!;
-  if(model.version!==packedVersion){model.pack(packed);gl!.texImage2D(gl!.TEXTURE_2D,0,gl!.RGBA,GRID_SIZE,GRID_SIZE,0,gl!.RGBA,gl!.UNSIGNED_BYTE,packed);gl!.uniform1f(uniforms.maxHeight,model.stats().maxHeight);packedVersion=model.version;}
-  top+=(Number(state.view==='above')-top)*Math.min(1,dt*4);alt+=(state.altitude-alt)*Math.min(1,dt*4);
-  gl!.uniform2f(uniforms.resolution,canvas.width,canvas.height);gl!.uniform1f(uniforms.altitude,alt);gl!.uniform1f(uniforms.yaw,state.yaw);gl!.uniform1f(uniforms.overhead,top);gl!.drawArrays(gl!.TRIANGLES,0,6);
+  const oldTop=top,oldAlt=alt,targetTop=Number(state.view==='above');
+  top+=(targetTop-top)*Math.min(1,dt*4);alt+=(state.altitude-alt)*Math.min(1,dt*4);
+  if(Math.abs(targetTop-top)<.0001)top=targetTop;if(Math.abs(state.altitude-alt)<.01)alt=state.altitude;
+  if(!invalidated&&model.version===packedVersion&&state.yaw===drawnYaw&&top===oldTop&&alt===oldAlt)return;
+  if(model.version!==packedVersion){model.pack(packed);if(packedVersion<0)gl!.texImage2D(gl!.TEXTURE_2D,0,gl!.RGBA,GRID_SIZE,GRID_SIZE,0,gl!.RGBA,gl!.UNSIGNED_BYTE,packed);else gl!.texSubImage2D(gl!.TEXTURE_2D,0,0,0,GRID_SIZE,GRID_SIZE,gl!.RGBA,gl!.UNSIGNED_BYTE,packed);gl!.uniform1f(uniforms.maxHeight,model.stats().maxHeight);packedVersion=model.version;}
+  gl!.uniform2f(uniforms.resolution,canvas.width,canvas.height);gl!.uniform1f(uniforms.altitude,alt);gl!.uniform1f(uniforms.yaw,state.yaw);gl!.uniform1f(uniforms.overhead,top);gl!.drawArrays(gl!.TRIANGLES,0,6);drawnYaw=state.yaw;invalidated=false;
  }
  frame=requestAnimationFrame(draw);
- return()=>{cancelAnimationFrame(frame);observer.disconnect();canvas.removeEventListener('webglcontextlost',lost);gl.deleteTexture(texture);gl.deleteBuffer(buffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);};
+ return()=>{cancelAnimationFrame(frame);observer.disconnect();window.removeEventListener('resize',resize);canvas.removeEventListener('webglcontextlost',lost);gl.deleteTexture(texture);gl.deleteBuffer(buffer);gl.deleteProgram(program);gl.deleteShader(vs);gl.deleteShader(fs);};
 }
+const grainFrames=new WeakMap<HTMLCanvasElement,{time:number;width:number;height:number}>();
 export function drawGrain(canvas:HTMLCanvasElement,t:number){
  const rect=canvas.getBoundingClientRect();const ratio=Math.min(window.devicePixelRatio||1,2);if(canvas.width!==Math.round(rect.width*ratio)||canvas.height!==Math.round(rect.height*ratio)){canvas.width=Math.round(rect.width*ratio);canvas.height=Math.round(rect.height*ratio);}
+ const previous=grainFrames.get(canvas);if(previous?.time===t&&previous.width===canvas.width&&previous.height===canvas.height)return;
+ grainFrames.set(canvas,{time:t,width:canvas.width,height:canvas.height});
  const ctx=canvas.getContext('2d');if(!ctx)return;ctx.setTransform(ratio,0,0,ratio,0,0);const w=rect.width,h=rect.height;ctx.clearRect(0,0,w,h);
  const start=w*.08,end=w*.86,crest=w*.66,baseline=h*.77,height=Math.min(h*.25,w*.19);const shape=(x:number,shift=0)=>{const v=x-shift;if(v<start||v>end)return baseline;const f=v<crest?(v-start)/(crest-start):(end-v)/(end-crest);return baseline-height*f*f*(3-2*f);};
  ctx.strokeStyle='#a4b19966';ctx.lineWidth=1;ctx.setLineDash([5,6]);ctx.beginPath();for(let x=start-35;x<=end;x+=2){const y=shape(x,-35);if(x===start-35)ctx.moveTo(x,y);else ctx.lineTo(x,y);}ctx.stroke();ctx.setLineDash([]);

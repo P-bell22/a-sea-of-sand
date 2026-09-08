@@ -17,7 +17,25 @@ export default function Home(){
  const [direction,setDirection]=useState(60);const [variableWind,setVariableWind]=useState(false);const [wind,setWind]=useState({direction:60,strength:1});
  const drag=useRef<{x:number,yaw:number}|null>(null);
  useEffect(()=>{if(window.matchMedia('(prefers-reduced-motion: reduce)').matches){state.current.playing=false;setPlaying(false);}return createTerrain(terrainRef.current!,state.current,setError);},[]);
- useEffect(()=>{let frame=0,prev=0,lastUI=0;function tick(now:number){const s=state.current;const dt=prev?Math.min((now-prev)/1000,.08):0;prev=now;if(!document.hidden)advanceSimulation(s,dt);if(now-lastUI>120){setCycles(s.cycles);setWind(windAt(s));if(s.model)setFieldStats(s.model.stats());lastUI=now;}if(s.view==='grain'&&grainRef.current)drawGrain(grainRef.current,s.grainTime);frame=requestAnimationFrame(tick);}frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);},[]);
+ useEffect(()=>{
+  let frame=0,prev=0,lastUI=0,shownCycles=-1,shownVersion=-1,shownDirection=NaN,shownStrength=NaN;
+  function tick(now:number){
+   const s=state.current,dt=prev?Math.min((now-prev)/1000,.08):0;prev=now;
+   if(!document.hidden){
+    advanceSimulation(s,dt);
+    if(now-lastUI>120){
+     if(s.cycles!==shownCycles||(s.model&&s.model.version!==shownVersion)){setCycles(s.cycles);shownCycles=s.cycles;}
+     const w=windAt(s);if(w.direction!==shownDirection||w.strength!==shownStrength){setWind(w);shownDirection=w.direction;shownStrength=w.strength;}
+     if(s.model&&s.model.version!==shownVersion){setFieldStats(s.model.stats());shownVersion=s.model.version;}
+     lastUI=now;
+    }
+    if(s.view==='grain'&&grainRef.current)drawGrain(grainRef.current,s.grainTime);
+   }
+   frame=requestAnimationFrame(tick);
+  }
+  frame=requestAnimationFrame(tick);return()=>cancelAnimationFrame(frame);
+ },[]);
+
  function toggle(){state.current.playing=!state.current.playing;setPlaying(state.current.playing);}
  function reset(){resetSimulation(state.current);setCycles(0);setWind(windAt(state.current));if(state.current.model)setFieldStats(state.current.model.stats());}
  function changeView(v:unknown){const next=String(v);state.current.view=next;setView(next);}

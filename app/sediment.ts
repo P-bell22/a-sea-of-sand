@@ -14,10 +14,19 @@ export type FieldStats={volume:number;exported:number;initial:number;balanceErro
 export class SandField{
  readonly size:number;readonly cell:number;readonly height:Float64Array;
  private delta:Float64Array;private shelter:Float64Array;
+ private neighbors:Uint32Array;
  readonly initialHeight:Float64Array;
  version=0;cycles=0;exported=0;initialVolume=0;
  constructor(size=GRID_SIZE,cell=CELL_SIZE,seed=true){
   this.size=size;this.cell=cell;this.height=new Float64Array(size*size);this.delta=new Float64Array(size*size);this.shelter=new Float64Array(size*size);
+  // Fixed topology: compute periodic neighbours once, not millions of times
+  // during each avalanche solve. The order matches the original solver.
+  this.neighbors=new Uint32Array(size*size*4);
+  for(let z=0;z<size;z++)for(let x=0;x<size;x++){
+   const i=(z*size+x)*4,right=(x+1)%size,left=(x+size-1)%size,below=((z+1)%size)*size;
+   this.neighbors[i]=z*size+right;this.neighbors[i+1]=below+x;
+   this.neighbors[i+2]=below+right;this.neighbors[i+3]=below+left;
+  }
   if(seed)this.seedDunes();
   this.relax(80);this.initialHeight=this.height.slice();this.initialVolume=this.volume();
  }
@@ -76,10 +85,12 @@ export class SandField{
  }
  private deposit(x:number,z:number,amount:number){
   const ix=Math.floor(x),iz=Math.floor(z),fx=x-ix,fz=z-iz,n=this.size;
-  for(let oz=0;oz<=1;oz++)for(let ox=0;ox<=1;ox++){
-   const part=amount*(ox?fx:1-fx)*(oz?fz:1-fz),xx=((ix+ox)%n+n)%n,zz=((iz+oz)%n+n)%n;
-   this.delta[zz*n+xx]+=part;
-  }
+  // Transport already wraps x/z into the domain. Reuse the four destinations
+  // and weights instead of repeating modulo and branches for each deposit.
+  const right=ix+1===n?0:ix+1,below=iz+1===n?0:iz+1,row=iz*n,nextRow=below*n;
+  const leftAmount=amount*(1-fx),rightAmount=amount*fx,d=this.delta;
+  d[row+ix]+=leftAmount*(1-fz);d[row+right]+=rightAmount*(1-fz);
+  d[nextRow+ix]+=leftAmount*fz;d[nextRow+right]+=rightAmount*fz;
  }
  step(strength:number,direction:number){
   this.cycles++;
@@ -123,13 +134,13 @@ export class SandField{
   for(let i=0;i<h.length;i++)h[i]+=this.delta[i];
  }
  relax(maxPasses=32){
-  const n=this.size,h=this.height,limit=this.cell*REPOSE;
-  const neighbors=[[1,0,limit],[0,1,limit],[1,1,limit*Math.SQRT2],[-1,1,limit*Math.SQRT2]];
+  const h=this.height,limit=this.cell*REPOSE,diagonal=limit*Math.SQRT2,neighbors=this.neighbors,count=h.length;
   for(let pass=0;pass<maxPasses;pass++){
    let worst=0;
-   for(let zz=0;zz<n;zz++)for(let xx=0;xx<n;xx++){
-    const x=pass%2?n-1-xx:xx,z=pass%2?n-1-zz:zz,i=z*n+x;
-    for(const [ox,oz,max] of neighbors){const nx=(x+ox+n)%n,nz=(z+oz+n)%n;const j=nz*n+nx,d=h[i]-h[j],excess=Math.abs(d)-max;if(excess<=.002)continue;
+   const reverse=pass%2;
+   for(let at=0;at<count;at++){
+    const i=reverse?count-1-at:at,base=i*4;
+    for(let k=0;k<4;k++){const j=neighbors[base+k],d=h[i]-h[j],excess=Math.abs(d)-(k<2?limit:diagonal);if(excess<=.002)continue;
      worst=Math.max(worst,excess);const source=d>0?i:j,dest=d>0?j:i,move=Math.min(h[source],excess*.5);h[source]-=move;h[dest]+=move;
     }
    }
